@@ -24,3 +24,7 @@ pyJianYingDraft 使用了 libmediainfo 检测素材类型，有些发行版没�
 ```shell
 $ sudo apt install libmediainfo-dev
 ```
+## 不同平台剪映草稿配置文件名不一致
+
+- windows: draft_content.json
+- macOS: draft_info.json
