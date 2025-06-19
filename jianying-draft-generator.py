@@ -138,7 +138,7 @@ class JianYingDraftGenerator:
             video_material = draft.Video_material(video_path)
             video_segment = draft.Video_segment(
                 video_material,
-                trange(start_time, f"{duration:.2f}s"),  # 保留2位小数
+                trange(start_time, f"{duration:.4f}s"),  # 保留4位小数
                 volume=volume
             )
             
@@ -176,7 +176,7 @@ class JianYingDraftGenerator:
             audio_material = draft.Audio_material(audio_path)
             audio_segment = draft.Audio_segment(
                 audio_material,
-                trange(start_time, f"{duration:.2f}s"),  # 保留2位小数
+                trange(start_time, f"{duration:.4f}s"),  # 保留4位小数
                 volume=volume
             )
             
@@ -210,7 +210,7 @@ class JianYingDraftGenerator:
             audio_material = draft.Audio_material(audio_path)
             audio_segment = draft.Audio_segment(
                 audio_material,
-                trange(start_time, f"{duration:.2f}s"),  # 保留2位小数
+                trange(start_time, f"{duration:.4f}s"),  # 保留4位小数
                 volume=volume
             )
             
@@ -283,22 +283,25 @@ class JianYingDraftGenerator:
                 continue
             
             video_name = video_data['origin_name']
-            video_duration = float(video_data['duration'])  # 使用浮点数
             video_path = os.path.join(asset_dir, video_name)
+            
+            # 使用 get_media_duration 获取准确的视频时长
+            video_duration = self.get_media_duration(video_path)
+            if video_duration <= 0:
+                print(f"跳过时长无效的视频: {video_name}")
+                continue
             
             start_time = f"{current_start_seconds}s"
             # add_transition = (i > 0)  # 第一个视频不加转场
             
             video_segment = self.add_video_segment(
-                video_path, start_time, video_duration,  # 保留浮点数
+                video_path, start_time, video_duration,
                 volume=1.0
             )
             
             if video_segment:
                 last_video_segment = video_segment
                 current_start_seconds += video_duration
-                # 视频偏移追加 0.009s 防止素材重叠
-                current_start_seconds += 0.009
             else:
                 print(f"跳过失败的视频: {video_name}")
         
@@ -327,19 +330,22 @@ class JianYingDraftGenerator:
                 continue
             
             audio_name = audio_data['origin_name']
-            audio_duration = float(audio_data['duration'])  # 使用浮点数
             audio_path = os.path.join(asset_dir, audio_name)
+            
+            # 使用 get_media_duration 获取准确的音频时长
+            audio_duration = self.get_media_duration(audio_path)
+            if audio_duration <= 0:
+                print(f"跳过时长无效的音频: {audio_name}")
+                continue
             
             start_time = f"{current_start_seconds}s"
             
             audio_segment = self.add_audio_segment(
-                audio_path, start_time, audio_duration, volume=0.5  # 保留浮点数
+                audio_path, start_time, audio_duration, volume=0.5
             )
             
             if audio_segment:
                 current_start_seconds += audio_duration
-                # 音频偏移追加 0.009s 防止素材重叠
-                current_start_seconds += 0.009
             else:
                 print(f"跳过失败的音频: {audio_name}")
         
@@ -369,14 +375,19 @@ class JianYingDraftGenerator:
             
             # 1. 处理配音文件
             voice_name = voice_data['voice_origin_name']
-            voice_duration = float(voice_data['voice_duration'])
             voice_path = os.path.join(asset_dir, voice_name)
+            
+            # 使用 get_media_duration 获取准确的配音时长
+            voice_duration = self.get_media_duration(voice_path)
+            if voice_duration <= 0:
+                print(f"跳过时长无效的配音: {voice_name}")
+                continue
             
             start_time = f"{current_start_seconds}s"
             
             # 配音音量可以设置得稍大一些，以便突出配音
             voice_segment = self.add_voice_segment(
-                voice_path, start_time, voice_duration, volume=1.0  # 保留浮点数
+                voice_path, start_time, voice_duration, volume=1.0
             )
             
             # 2. 处理字幕文件
@@ -402,9 +413,6 @@ class JianYingDraftGenerator:
             
             if voice_segment:
                 current_start_seconds += voice_duration
-                # 导入字幕文件失败 字幕片段2.srt: New segment overlaps with existing segment [start: 9610000, end: 10444000]
-                # 字幕偏移追加 0.009s 防止字幕重叠
-                current_start_seconds += 0.009
             else:
                 print(f"跳过失败的配音: {voice_name}")
         
@@ -428,7 +436,14 @@ class JianYingDraftGenerator:
             output_dir = os.path.dirname(output_path)
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir, exist_ok=True)
-            
+
+            # 兼容 macos 的草稿文件名 draft_info.json
+            self.script.dump(os.path.join(output_dir, "draft_info.json"))
+            # 创建 draft_meta_info.json 空文件，减少手动创建空草稿的步骤
+            with open(os.path.join(output_dir, "draft_meta_info.json"), "w") as f:
+                f.write("")
+
+            # 保存 windows 草稿配置文件    
             self.script.dump(output_path)
             print(f"草稿已成功保存到: {output_path}")
             return True
@@ -436,6 +451,44 @@ class JianYingDraftGenerator:
         except Exception as e:
             print(f"错误: 保存草稿失败: {e}")
             return False
+
+    def get_media_duration(self, file_path: str) -> float:
+        """
+        使用 pymediainfo 计算媒体文件的精确时长
+        
+        Args:
+            file_path: 媒体文件路径
+            
+        Returns:
+            float: 媒体文件时长(秒)，保留4位小数，如果计算失败则返回0.0
+        """
+        try:
+            if not os.path.exists(file_path):
+                print(f"错误: 文件不存在: {file_path}")
+                return 0.0
+            
+            from pymediainfo import MediaInfo
+            media_info = MediaInfo.parse(file_path)
+            
+            # 优先使用 General track 的 duration
+            for track in media_info.tracks:
+                if track.track_type == "General":
+                    if track.duration is not None:
+                        # print(f"文件时长: {track.duration} 文件路径: {file_path}")
+                        # MediaInfo 的 duration 是毫秒单位，需要转换为秒
+                        return round(float(track.duration) / 1000, 4)
+            
+            # 如果 General track 中没有 duration，尝试其他轨道
+            for track in media_info.tracks:
+                if track.duration is not None:
+                    return round(float(track.duration) / 1000, 4)
+                
+            print(f"警告: 无法获取文件时长: {file_path}")
+            return 0.0
+            
+        except Exception as e:
+            print(f"错误: 计算文件时长失败 {file_path}: {e}")
+            return 0.0
 
 
 def read_json_file(file_path: str, config_name: str) -> Optional[List]:
@@ -701,7 +754,7 @@ def main():
             total_duration = sum(float(v.get('duration', 0)) for v in video_data_list 
                                if generator.validate_video_data(v))
             if total_duration > 0:
-                text_timerange = trange("0s", f"{total_duration:.2f}s")  # 保留两位小数
+                text_timerange = trange("0s", f"{total_duration:.4f}s")  # 保留两位小数
                 generator.add_text_segment(text, text_timerange)
         elif text and not video_data_list:
             print("有文本内容但没有视频数据，无法添加文本片段")
