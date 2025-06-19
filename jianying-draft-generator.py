@@ -9,9 +9,8 @@ import json
 import argparse
 import sys
 from typing import Dict, List, Any, Optional
-import pyJianYingDraft as draft
-from pyJianYingDraft import Intro_type, Transition_type, trange, tim
-
+import pyJianYingDraftMixed as draft
+from pyJianYingDraftMixed import Intro_type, Transition_type, trange, tim
 
 class JianYingDraftGenerator:
     """剪映草稿生成器"""
