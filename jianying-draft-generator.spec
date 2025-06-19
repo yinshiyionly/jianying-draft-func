@@ -5,7 +5,7 @@ a = Analysis(
     ['jianying-draft-generator.py'],
     pathex=[],
     binaries=[],
-    datas=[('./draft_content_template.json', 'pyJianYingDraft')],
+    datas=[('./draft_content_template.json', 'pyJianYingDraftMixed')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
