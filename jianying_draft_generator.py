@@ -50,7 +50,7 @@ class JianYingDraftGenerator:
                 self.script.add_track(draft.Track_type.video)
                 print("已添加视频轨道")
             if has_text:
-                self.script.add_track(draft.Track_type.text)
+                self.script.add_track(draft.Track_type.text, track_name="keyword")
                 print("已添加文本轨道")
             print(f"成功创建 {self.width}x{self.height} 分辨率的草稿脚本")
         except Exception as e:
@@ -249,7 +249,7 @@ class JianYingDraftGenerator:
             text_segment.add_bubble("361595", "6742029398926430728")
             text_segment.add_effect("7296357486490144036")
             
-            self.script.add_segment(text_segment)
+            self.script.add_segment(text_segment, track_name="keyword")
             print(f"成功添加文本: {text}")
             return text_segment
             
@@ -257,13 +257,14 @@ class JianYingDraftGenerator:
             print(f"错误: 添加文本片段失败: {e}")
             return None
     
-    def process_video_data_list(self, video_data_list: List[Dict], asset_dir: str) -> bool:
+    def process_video_data_list(self, video_data_list: List[Dict], asset_dir: str, keyword: str = '') -> bool:
         """
         批量处理视频数据列表
         
         Args:
             video_data_list: 视频数据列表
             asset_dir: 素材目录路径
+            keyword: 关键词
             
         Returns:
             bool: 处理是否成功
@@ -272,7 +273,9 @@ class JianYingDraftGenerator:
             print("警告: 视频数据列表为空")
             return True
         
+        # 视频开始时间
         current_start_seconds = 0
+        # 最后一个视频片段
         last_video_segment = None
         
         for i, video_data in enumerate(video_data_list):
@@ -290,18 +293,30 @@ class JianYingDraftGenerator:
                 continue
             
             start_time = f"{current_start_seconds}s"
-            # add_transition = (i > 0)  # 第一个视频不加转场
             
             video_segment = self.add_video_segment(
                 video_path, start_time, video_duration,
                 volume=1.0
             )
-            
+
             if video_segment:
                 last_video_segment = video_segment
                 current_start_seconds += video_duration
             else:
                 print(f"跳过失败的视频: {video_name}")
+
+        # 视频开头增加关键字
+        if keyword:
+            text_segment = draft.Text_segment(
+                keyword, trange("2s", f"{current_start_seconds-2:.4f}s"),
+                style=draft.Text_style(color=(1.0, 1.0, 1.0),size=14.0,bold=True),
+                clip_settings=draft.Clip_settings(transform_y=0.3)
+            )
+            text_segment.add_animation(draft.Text_outro.故障闪动, duration=tim("2s"))
+            text_segment.add_bubble("361595", "6742029398926430728")
+            text_segment.add_effect("7296357486490144036")
+            self.script.add_segment(text_segment, track_name="keyword")
+        
         
         return last_video_segment is not None
     
@@ -401,7 +416,7 @@ class JianYingDraftGenerator:
                         track_name="subtitle",
                         time_offset=time_offset,
                         text_style=draft.Text_style(size=12.0, color=(1.0, 1.0, 1.0)),
-                        clip_settings=draft.Clip_settings(transform_y=0.5)
+                        clip_settings=draft.Clip_settings(transform_y=-0.8)
                     )
                     print(f"成功导入字幕: {srt_name}, 时间偏移: {time_offset}")
                 except Exception as e:
@@ -500,7 +515,7 @@ class JianYingDraftService:
         
     def generate_from_config(self, draft_path: str, video_segment: List[Dict] = None, 
                            bgm_segment: List[Dict] = None, voice_segment: List[Dict] = None,
-                           width: int = 1080, height: int = 1920, text: str = '') -> Tuple[bool, str]:
+                           width: int = 1080, height: int = 1920, keyword: str = '') -> Tuple[bool, str]:
         """
         从传入的配置参数生成剪映草稿
         
@@ -511,7 +526,7 @@ class JianYingDraftService:
             voice_segment: 配音和字幕片段属性列表
             width: 视频宽度，默认1080
             height: 视频高度，默认1920
-            text: 文本内容，默认为空
+            keyword: 关键词，默认为空
             
         Returns:
             Tuple[bool, str]: (是否成功, 错误信息)
@@ -534,11 +549,11 @@ class JianYingDraftService:
             print(f"从配置文件读取: 视频数据 {len(video_data_list)}项, 音频数据 {len(audio_data_list)}项, 配音数据 {len(voice_data_list)}项")
             
             # 规范化路径
-            try:
-                material_dir = self._normalize_path(material_dir)
-                draft_path = self._normalize_path(draft_path)
-            except Exception as e:
-                return False, f"路径规范化失败: {str(e)}"
+            # try:
+            #     material_dir = self._normalize_path(material_dir)
+            #     draft_path = self._normalize_path(draft_path)
+            # except Exception as e:
+            #     return False, f"路径规范化失败: {str(e)}"
             
             # 验证路径
             if not self._validate_paths(draft_path, material_dir):
@@ -548,11 +563,12 @@ class JianYingDraftService:
             has_audio = bool(audio_data_list)
             has_video = bool(video_data_list)
             has_voice = bool(voice_data_list)
-            has_text = bool(text and video_data_list)  # 只有当有文本内容且有视频时才添加文本轨道
+            has_text = bool(keyword and video_data_list)  # 只有当有文本内容且有视频时才添加文本轨道
             
             print(f"视频数据: {len(video_data_list)}项")
             print(f"音频数据: {len(audio_data_list)}项")
             print(f"配音数据: {len(voice_data_list)}项")
+            print(f"关键词: {keyword}")
             print(f"草稿分辨率: {width}x{height}")
             
             # 检查是否有任何媒体数据
@@ -591,27 +607,13 @@ class JianYingDraftService:
             # 处理视频数据
             if has_video:
                 try:
-                    if not self.generator.process_video_data_list(video_data_list, material_dir):
+                    if not self.generator.process_video_data_list(video_data_list, material_dir, keyword):
                         return False, "视频处理失败"
                 except Exception as e:
                     return False, f"处理视频数据失败: {str(e)}"
             else:
                 print("没有视频数据，跳过视频轨道处理")
             
-            # 添加文本片段 (如果有视频和文本内容)
-            if has_text:
-                try:
-                    # 计算总时长作为文本时间范围
-                    total_duration = sum(float(v.get('duration', 0)) for v in video_data_list 
-                                       if self.generator.validate_video_data(v))
-                    if total_duration > 0:
-                        text_timerange = trange("0s", f"{total_duration:.4f}s")  # 保留两位小数
-                        if not self.generator.add_text_segment(text, text_timerange):
-                            return False, "添加文本片段失败"
-                except Exception as e:
-                    return False, f"处理文本数据失败: {str(e)}"
-            elif text and not video_data_list:
-                print("有文本内容但没有视频数据，无法添加文本片段")
             
             # 保存草稿
             try:
@@ -714,9 +716,9 @@ if __name__ == "__main__":
     service = JianYingDraftService()
     
     # 示例配置
-    draft_path = r"/mnt/c/Users/eleven/AppData/Local/JianyingPro/User Data/Projects/com.lveditor.draft/0618"
+    #draft_path = r"/mnt/c/Users/eleven/AppData/Local/JianyingPro/User Data/Projects/com.lveditor.draft/666"
     #draft_path = r"./demo"
-    #draft_path = r"C:\Users\eleven\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft\6月18日"
+    draft_path = r"C:\Users\eleven\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft\666"
     video_segment = [
         {
             "origin_name": "video1.mp4",
@@ -724,6 +726,14 @@ if __name__ == "__main__":
         },
         {
             "origin_name": "video2.mp4",
+            "duration": 10.5
+        },
+        {
+            "origin_name": "视频片段2-水滴画_(390).mp4",
+            "duration": 10.5
+        },
+        {
+            "origin_name": "视频片段3-(国外笔试绘图仪绘图)淘宝-宁G宁一元素材 (22).mp4",
             "duration": 10.5
         }
     ]
@@ -757,7 +767,8 @@ if __name__ == "__main__":
         bgm_segment=bgm_segment,
         voice_segment=voice_segment,
         width=1080,
-        height=1920
+        height=1920,
+        keyword="月亮变心"
     )
 
     if success:
