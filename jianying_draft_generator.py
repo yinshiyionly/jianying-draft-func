@@ -430,20 +430,22 @@ class JianYingDraftGenerator:
             if not self.script:
                 raise RuntimeError("草稿脚本未初始化")
             
-            # 确保输出目录存在
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
+            if output_path and not os.path.exists(output_path):
+                os.makedirs(output_path, exist_ok=True)
+            # 兼容 windows 的草稿文件名 draft_content.json
+            self.script.dump(os.path.join(output_path, "draft_content.json"))
+            print(f"win-草稿内容已成功保存到: {os.path.join(output_path, 'draft_content.json')}")
+
 
             # 兼容 macos 的草稿文件名 draft_info.json
-            self.script.dump(os.path.join(output_dir, "draft_info.json"))
-            # 创建 draft_meta_info.json 空文件，减少手动创建空草稿的步骤
-            with open(os.path.join(output_dir, "draft_meta_info.json"), "w") as f:
-                f.write("")
+            self.script.dump(os.path.join(output_path, "draft_info.json"))
+            print(f"mac-草稿内容已成功保存到: {os.path.join(output_path, 'draft_info.json')}")
 
-            # 保存 windows 草稿配置文件    
-            self.script.dump(output_path)
-            print(f"草稿已成功保存到: {output_path}")
+            # 创建 draft_meta_info.json 空文件，减少手动创建空草稿的步骤
+            with open(os.path.join(output_path, "draft_meta_info.json"), "w") as f:
+                f.write("")
+                print(f"草稿元信息已成功保存到: {os.path.join(output_path, 'draft_meta_info.json')}")
+            
             return True
             
         except Exception as e:
@@ -496,12 +498,20 @@ class JianYingDraftService:
         """初始化服务"""
         self.generator = None
         
-    def generate_from_config(self, config_file_path: str) -> Tuple[bool, str]:
+    def generate_from_config(self, draft_path: str, video_segment: List[Dict] = None, 
+                           bgm_segment: List[Dict] = None, voice_segment: List[Dict] = None,
+                           width: int = 1080, height: int = 1920, text: str = '') -> Tuple[bool, str]:
         """
-        从配置文件生成剪映草稿
+        从传入的配置参数生成剪映草稿
         
         Args:
-            config_file_path: 配置文件的绝对路径
+            draft_path: 草稿箱目录绝对路径
+            video_segment: 视频片段属性列表
+            bgm_segment: 背景音乐片段属性列表
+            voice_segment: 配音和字幕片段属性列表
+            width: 视频宽度，默认1080
+            height: 视频高度，默认1920
+            text: 文本内容，默认为空
             
         Returns:
             Tuple[bool, str]: (是否成功, 错误信息)
@@ -513,22 +523,13 @@ class JianYingDraftService:
             print("剪映草稿生成脚本 - 开始执行")
             print("=" * 50)
             
-            # 读取配置文件
-            config = self._read_config_file(config_file_path)
-            if not config:
-                return False, "读取配置文件失败"
-                
-            # 从配置中获取基本参数
-            material_dir = config.get('material_dir', '')
-            draft_path = config.get('draft_path', '')
-            width = config.get('width', 1080)
-            height = config.get('height', 1920)
-            text = config.get('text', '')
+            # 初始化参数
+            video_data_list = video_segment or []
+            audio_data_list = bgm_segment or []
+            voice_data_list = voice_segment or []
             
-            # 从配置中获取各类媒体数据
-            video_data_list = config.get('video_segment', [])
-            audio_data_list = config.get('bgm_segment', [])
-            voice_data_list = config.get('voice_segment', [])
+            # 素材目录是 draft_path 下的一级文件夹-miaobi
+            material_dir = os.path.join(draft_path, "miaobi")
             
             print(f"从配置文件读取: 视频数据 {len(video_data_list)}项, 音频数据 {len(audio_data_list)}项, 配音数据 {len(voice_data_list)}项")
             
@@ -541,7 +542,7 @@ class JianYingDraftService:
             
             # 验证路径
             if not self._validate_paths(draft_path, material_dir):
-                return False, "路径验证失败"
+                return False, "草稿箱或素材目录路径验证失败"
             
             # 确定是否需要各种轨道
             has_audio = bool(audio_data_list)
@@ -629,44 +630,6 @@ class JianYingDraftService:
             print(error_msg)
             return False, error_msg
             
-    def _read_config_file(self, config_file_path: str) -> Dict[str, Any]:
-        """
-        读取和解析总配置JSON文件
-        
-        Args:
-            config_file_path: 配置文件路径
-            
-        Returns:
-            Dict: 包含所有配置的字典，失败返回空字典
-        
-        Raises:
-            FileNotFoundError: 当配置文件不存在时
-            json.JSONDecodeError: 当配置文件格式错误时
-            Exception: 其他未预期的错误
-        """
-        if not config_file_path:
-            raise ValueError("配置文件路径为空")
-        
-        if not os.path.exists(config_file_path):
-            raise FileNotFoundError(f"配置文件不存在: {config_file_path}")
-            
-        with open(config_file_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            
-        if not isinstance(config, dict):
-            raise ValueError(f"配置文件内容必须是有效的JSON对象: {config_file_path}")
-        
-        print(f"成功读取配置文件: {config_file_path}")
-        
-        # 验证必要的字段
-        required_fields = ['material_dir', 'draft_path']
-        missing_fields = [field for field in required_fields if field not in config]
-        
-        if missing_fields:
-            raise ValueError(f"配置文件缺少必要字段: {', '.join(missing_fields)}")
-        
-        return config
-
     def _normalize_path(self, path: str) -> str:
         """
         规范化文件路径，处理不同操作系统的路径格式
@@ -687,12 +650,12 @@ class JianYingDraftService:
         
         return path
         
-    def _validate_paths(self, dump_path: str, asset_dir: str) -> bool:
+    def _validate_paths(self, draft_path: str, asset_dir: str) -> bool:
         """
         验证路径的有效性
         
         Args:
-            dump_path: 输出路径
+            draft_path: 草稿箱绝对路径
             asset_dir: 素材目录路径
             
         Returns:
@@ -700,47 +663,70 @@ class JianYingDraftService:
         """
         try:
             # 基本路径检查
-            if not dump_path or dump_path.endswith('/') or dump_path.endswith('\\'):
-                print(f"错误: 输出路径无效，必须包含文件名: {dump_path}")
+            if not draft_path or draft_path.endswith('/') or draft_path.endswith('\\') and not os.path.isdir(asset_dir):
+                print(f"错误: 草稿箱目录路径无效: {draft_path}")
                 return False
                 
             if not asset_dir or not (asset_dir.endswith('/') or asset_dir.endswith('\\')) and not os.path.isdir(asset_dir):
                 print(f"错误: 素材目录路径无效: {asset_dir}")
                 return False
             
+            # 验证草稿箱目录
+            if not os.path.exists(draft_path):
+                print(f"错误: 草稿箱目录不存在: {draft_path}")
+                return False
+            else:
+                print(f"草稿箱目录检查通过: {draft_path}")
+
             # 验证素材目录
             if not os.path.exists(asset_dir):
                 print(f"错误: 素材目录不存在: {asset_dir}")
                 return False
             else:
                 print(f"素材目录检查通过: {asset_dir}")
-            
-            # 验证输出路径的父目录
-            dump_dir = os.path.dirname(dump_path)
-            if not dump_dir:
-                print(f"错误: 输出路径必须包含目录: {dump_path}")
-                return False
                 
-            if dump_dir and not os.path.exists(dump_dir):
+            # 创建草稿箱目录
+            if draft_path and not os.path.exists(draft_path):
                 try:
-                    os.makedirs(dump_dir, exist_ok=True)
-                    print(f"创建输出目录: {dump_dir}")
+                    os.makedirs(draft_path, exist_ok=True)
+                    print(f"创建草稿箱目录: {draft_path}")
                 except Exception as e:
-                    print(f"错误: 无法创建输出目录 {dump_dir}: {e}")
+                    print(f"错误: 无法创建草稿箱目录 {draft_path}: {e}")
+                    return False
+
+            # 创建素材目录
+            if asset_dir and not os.path.exists(asset_dir):
+                try:
+                    os.makedirs(asset_dir, exist_ok=True)
+                    print(f"创建素材目录: {asset_dir}")
+                except Exception as e:
+                    print(f"错误: 无法创建素材目录 {asset_dir}: {e}")
                     return False
             
-            # 检查输出路径是否可写
+            # 检查草稿箱目录是否可写
             try:
                 # 检查目录是否可写
-                test_file = os.path.join(dump_dir, '.write_test_temp')
+                test_file = os.path.join(draft_path, '.write_test_temp')
                 with open(test_file, 'w') as f:
                     f.write('test')
                 os.remove(test_file)
             except Exception as e:
-                print(f"错误: 输出目录不可写: {dump_dir}: {e}")
+                print(f"错误: 输出目录不可写: {draft_path}: {e}")
+                return False
+            
+            # 检查素材目录是否可写
+            try:
+                # 检查目录是否可写
+                test_file = os.path.join(asset_dir, '.write_test_temp')
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except Exception as e:
+                print(f"错误: 输出目录不可写: {asset_dir}: {e}")
                 return False
                 
-            print(f"输出路径检查通过: {dump_path}")
+            print(f"草稿箱目录检查通过: {draft_path}")
+            print(f"素材目录检查通过: {asset_dir}")
             return True
         except Exception as e:
             print(f"路径验证过程中出现错误: {e}")
@@ -749,9 +735,51 @@ class JianYingDraftService:
 if __name__ == "__main__":
     # 创建服务实例
     service = JianYingDraftService()
-    # 从配置文件生成草稿
-    config_file_path = "/home/eleven/taido/jianying-draft-tools/config-file.txt"
-    success, error_msg = service.generate_from_config(config_file_path)
+    
+    # 示例配置
+    draft_path = "./demo"
+    video_segment = [
+        {
+            "origin_name": "video1.mp4",
+            "duration": 10.5
+        },
+        {
+            "origin_name": "video2.mp4",
+            "duration": 10.5
+        }
+    ]
+    bgm_segment = [
+        {
+            "origin_name": "bgm1.mp3",
+            "duration": 30.0
+        },
+        {
+            "origin_name": "bgm2.mp3",
+            "duration": 30.0
+        }
+    ]
+    voice_segment = [
+        {
+            "voice_origin_name": "voice1.wav",
+            "voice_duration": 5.0,
+            "srt_origin_name": "srt1.srt"
+        },
+        {
+            "voice_origin_name": "voice2.wav",
+            "voice_duration": 5.0,
+            "srt_origin_name": "srt2.srt"
+        }
+    ]
+    
+    # 从参数生成草稿
+    success, error_msg = service.generate_from_config(
+        draft_path=draft_path,
+        video_segment=video_segment,
+        bgm_segment=bgm_segment,
+        voice_segment=voice_segment,
+        width=1080,
+        height=1920
+    )
 
     if success:
         print("草稿生成成功")
