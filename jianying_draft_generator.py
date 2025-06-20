@@ -662,29 +662,6 @@ class JianYingDraftService:
             bool: 路径是否有效
         """
         try:
-            # 基本路径检查
-            if not draft_path or draft_path.endswith('/') or draft_path.endswith('\\') and not os.path.isdir(asset_dir):
-                print(f"错误: 草稿箱目录路径无效: {draft_path}")
-                return False
-                
-            if not asset_dir or not (asset_dir.endswith('/') or asset_dir.endswith('\\')) and not os.path.isdir(asset_dir):
-                print(f"错误: 素材目录路径无效: {asset_dir}")
-                return False
-            
-            # 验证草稿箱目录
-            if not os.path.exists(draft_path):
-                print(f"错误: 草稿箱目录不存在: {draft_path}")
-                return False
-            else:
-                print(f"草稿箱目录检查通过: {draft_path}")
-
-            # 验证素材目录
-            if not os.path.exists(asset_dir):
-                print(f"错误: 素材目录不存在: {asset_dir}")
-                return False
-            else:
-                print(f"素材目录检查通过: {asset_dir}")
-                
             # 创建草稿箱目录
             if draft_path and not os.path.exists(draft_path):
                 try:
@@ -737,7 +714,9 @@ if __name__ == "__main__":
     service = JianYingDraftService()
     
     # 示例配置
-    draft_path = "./demo"
+    draft_path = r"/mnt/c/Users/eleven/AppData/Local/JianyingPro/User Data/Projects/com.lveditor.draft/0618"
+    #draft_path = r"./demo"
+    #draft_path = r"C:\Users\eleven\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft\6月18日"
     video_segment = [
         {
             "origin_name": "video1.mp4",
